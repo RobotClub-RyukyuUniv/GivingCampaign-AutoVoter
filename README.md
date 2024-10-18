@@ -16,6 +16,7 @@
 - ドキュメント（main.pyの一番最初のところ）に定数の説明が書いているから、自分の情報に書き換える
 
 1. 毎回URLと、団体名を書き換える
+    - `URLはkumamoto-u.2024.giving-campaign.jp/form/vote/step1`のように/form/vote/step1をつける
 2. main.pyを実行
 3. 開かれたChromeでsms認証をして応援メッセージを書く
 4. 終了したければ、ターミナルでyを入力

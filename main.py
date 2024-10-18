@@ -6,7 +6,7 @@
 - フォームを送信します。
 
 定数の説明
-URL: それぞれ大学の参加団体を選択したところ
+URL: それぞれ大学の参加団体を選択したところ（必ずドメイン以降は/form/vote/step1であること)
 TARGET: 入力したい団体名。
 
 NAME: 名前（半角スペースで区切る）
@@ -33,9 +33,9 @@ from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 import time
 
-URL = 'https://u-fukui.2024.giving-campaign.jp/form/vote/step1'
+URL = 'https://gifu-u.2024.giving-campaign.jp/form/vote/step1'
 
-TARGET ="福井大学フォーミュラカー製作プロジェクト"
+TARGET ="ロボコンサークル"
 
 NAME = "宮城 琉徳"
 GENDER = "無回答"
