@@ -33,9 +33,9 @@ from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 import time
 
-URL = 'https://gifu-u.2024.giving-campaign.jp/form/vote/step1'
+#URL = 'https://hirosaki-u.2024.giving-campaign.jp/form/vote/step1'
 
-TARGET ="ロボコンサークル"
+#TARGET ="弘前大学書道部"
 
 NAME = "宮城 琉徳"
 GENDER = "無回答"
@@ -87,7 +87,7 @@ options = webdriver.ChromeOptions()
 driver = webdriver.Chrome(options=options)
 
 
-def openForm():
+def openForm(URL, TARGET):
     # Webページを開く
     driver.get(URL)
     print("ページを開きました。")
@@ -257,12 +257,23 @@ def smsAuth():
 
 def vote(auto:bool):
     print("応援したい内容を入力します")
-    content = "琉球大学robotサークルです！応援してます"
+    if auto:
+        content = "琉球大学robotサークルです！応援してます"
+    else:
+        content =""
     while len(content) == 0:
         if not auto:
             content = input()
     
     #入力
+    message_field = driver.find_element(By.NAME, 'message')
+    message_field.send_keys(content)
+    time.sleep(0.2)
+
+    #送信
+    submit_button = driver.find_element(By.XPATH, "/html/body/div/main/div[2]/form/div[2]/button")
+    submit_button.click()
+    time.sleep(1)
 
 
 def loop():
@@ -274,18 +285,22 @@ def loop():
 
 
 if __name__ == "__main__":
-    openForm()
+    print("URL(/form/vote/step1の形になってるもの): ")
+    URL = input()
+    print("応援する団体名(webに書かれているもの):")
+    TARGET = input()
+    openForm(URL, TARGET)
 
     writeForm()
 
     
-    #smsAuth()
+    smsAuth()
 
-    #vote()
+    vote(True)
 
     loop()
     
     # ブラウザを閉じる
-    #driver.quit()
-    #print("ブラウザを閉じました。")
+    driver.quit()
+    print("ブラウザを閉じました。")
 
