@@ -6,9 +6,6 @@
 - フォームを送信します。
 
 定数の説明
-URL: それぞれ大学の参加団体を選択したところ（必ずドメイン以降は/form/vote/step1であること)
-TARGET: 入力したい団体名。
-
 NAME: 名前（半角スペースで区切る）
 GENDER: 性別（男、女、その他、無回答）
 BIRTHDAY: 誕生日。/で区切る。例"2005/12/31"
@@ -51,7 +48,7 @@ MAJOR = "science"
 MAJORSUBJECT ="工学部・工学科"
 # 以前から交流会: relationship_with_individual_or_organization  きっかけに交流: active_individual_or_organization_relationship 
 MOTIVE = "active_individual_or_organization_relationship" 
-HOWTOKNOW = "student"
+HOWTOKNOW = "other_individual"
 
 # 名字と名前を分割
 lastname = NAME.split()[0]
@@ -69,13 +66,10 @@ elif GENDER == "無回答":
 
 # 生年月日を分割
 birth_year, birth_month, birth_day = BIRTHDAY.split('/')
-print(birth_year, birth_month, birth_day )
 
 # 入学、卒業年月を分割
 encro_year, encro_month = ENCROLLMENT.split('/')
-print(encro_year, encro_month)
 gradu_year, gradu_month = GRADUATION.split('/')
-print(gradu_year, gradu_month)
 
 
 #きっかけを変換
