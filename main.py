@@ -31,6 +31,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
+import sys
 import time
 
 #URL = 'https://hirosaki-u.2024.giving-campaign.jp/form/vote/step1'
@@ -87,15 +88,29 @@ options = webdriver.ChromeOptions()
 driver = webdriver.Chrome(options=options)
 
 
+def question():
+    print("ドメイン(例: https://tohoku.2024.giving-campaign.jp): ")
+    URL = input() +"/form/vote/step1"
+    print("応援する団体名(webに書かれているもの):")
+    TARGET = input()
+
+    return URL, TARGET
+
 def openForm(URL, TARGET):
     # Webページを開く
     driver.get(URL)
     print("ページを開きました。")
     time.sleep(2)
 
-    target_img = driver.find_element(By.XPATH, f"//img[@alt='{TARGET}']")
-    target_img.click()
-    print("目標を発見してクリックした")
+    try:
+        target_img = driver.find_element(By.XPATH, f"//img[@alt='{TARGET}']")
+        target_img.click()
+        print("目標を発見してクリックした")
+        return True
+    except:
+        print("エラー: 正常に開けませんでした")
+        return False
+
 
 
 def writeForm():
@@ -276,31 +291,33 @@ def vote(auto:bool):
     time.sleep(1)
 
 
-def loop():
-    print("終了しますか？(y/n)")
+def check():
     while True:
+        print("続行しますか(y/n)")
         text = input()
         if text == 'y':
-            break
+            return True
+        elif text == 'n':
+            return False
 
 
 if __name__ == "__main__":
-    print("URL(/form/vote/step1の形になってるもの): ")
-    URL = input()
-    print("応援する団体名(webに書かれているもの):")
-    TARGET = input()
-    openForm(URL, TARGET)
 
-    writeForm()
+    while True:
+        URL, TARGET = question()
 
-    
-    smsAuth()
+        if openForm(URL, TARGET):
 
-    vote(True)
+            writeForm()
 
-    loop()
-    
-    # ブラウザを閉じる
-    driver.quit()
-    print("ブラウザを閉じました。")
+            smsAuth()
+
+            vote(True)
+
+        if not check():
+            # ブラウザを閉じる
+            driver.quit()
+            print("ブラウザを閉じました。")
+            # 終了する
+            sys.exit(0)
 
