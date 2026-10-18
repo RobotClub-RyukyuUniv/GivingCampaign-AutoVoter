@@ -1,0 +1,11 @@
+# 個人設定（氏名・連絡先などを書く可能性があるのでコミットしない）
+config.yaml
+*.local.yaml
+
+# ビルド成果物
+/gcvote
+/dist/
+
+# ツールが作る作業ファイル
+.playwright-mcp/
+.DS_Store

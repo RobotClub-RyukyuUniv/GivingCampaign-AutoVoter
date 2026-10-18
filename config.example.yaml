@@ -1,0 +1,37 @@
+# gcvote の設定例。初回実行時に対話で答えると自動で保存されるので、手で書かなくても使える。
+# 保存先: macOS ~/Library/Application Support/gcvote/config.yaml
+#         Linux ~/.config/gcvote/config.yaml / Windows %AppData%\gcvote\config.yaml
+#
+# 氏名・生年月日・メールアドレス・電話番号などは Cross Campus のプロフィールから取得するので書かない。
+
+# 応援メッセージの既定値（告知文に「コメント欄に必ず「〜」と記入」があればそちらを提案する）
+message: 琉球大学 Robotサークル
+
+# 支援者として、お名前・大学との関係性の一般公開・支援先団体への共有に同意するか
+supporter_publication_consent: true
+
+# 卒業/修了見込み年度（3月卒業なら卒業年の前年。例: 2028年3月卒業 → 2027）
+graduation_fiscal_year: 2027
+
+# 投票先団体との関係性
+#   target_group_member  この団体のメンバーであるため
+#   prior_connection     Giving Campaign以前から交流があるため
+#   campaign_connection  Giving Campaignをきっかけに交流が活発化したため
+#   support_project      特に交流等はないが、応援したいと思うプロジェクトであるため
+#   other                その他
+vote_reason: campaign_connection
+
+# どのようにしてGiving Campaignを知りましたか（複数可。「本学」は投票先の大学のこと）
+#   student                                本学の学生からの紹介
+#   other_individual                       本学の学生以外の個人からの紹介
+#   university_official_announcement       本学による発信（ホームページ・公式SNSなど）
+#   giving_campaign_official_announcement  Giving Campaign運営による発信
+#   media                                  テレビ・新聞などのメディア
+#   other                                  その他
+sources:
+  - student
+
+# 以下は Cross Campus のプロフィールに無い場合だけ使われる
+# grade: bachelor_2        # bachelor_1..6 / master_1..2 / doctor_1..3
+# faculty: 工学部
+# department: 工学科
