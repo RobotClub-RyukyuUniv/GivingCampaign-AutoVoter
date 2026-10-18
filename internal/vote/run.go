@@ -18,6 +18,8 @@ type Plan struct {
 	Org    *api.Organization
 	Group  *api.Group
 	Err    error // 解決できなかった・投票できない理由
+	// Registered はこの大学に参加登録済み（＝ほぼ確実に投票済み）かどうか。nil は未確認。
+	Registered *bool
 }
 
 func (pl *Plan) Title() string {
@@ -85,14 +87,25 @@ func Resolve(ctx context.Context, c *api.Client, targets []target.Target) []*Pla
 
 // Result は1件の投票結果。
 type Result struct {
-	Plan    *Plan
-	Voted   bool
-	Message bool
-	Note    string
-	Err     error
+	Plan         *Plan
+	Voted        bool
+	AlreadyVoted bool // この大学では投票済み（サーバーが 409 を返した）
+	Message      bool
+	Note         string
+	Err          error
+}
+
+// Registered はこの大学に参加登録済みかどうかを調べ、登録済みなら参加者IDを返す。
+func Registered(ctx context.Context, c *api.Client, pl *Plan, authToken string) (string, error) {
+	pid, err := c.WithOrigin(pl.Target.Origin()).MyParticipant(ctx, pl.Org.ID, authToken)
+	if api.IsStatus(err, http.StatusNotFound) {
+		return "", nil
+	}
+	return pid, err
 }
 
 // Submit は参加登録 → 投票 → 応援メッセージ送信を行う。
+// 参加登録済みならその登録で投票を試み、投票済みなら AlreadyVoted を立てて終わる。
 func Submit(ctx context.Context, c *api.Client, pl *Plan, prof *api.CrossCampusProfile, a *Answers, authToken string) Result {
 	r := Result{Plan: pl}
 	cc := c.WithOrigin(pl.Target.Origin())
@@ -103,27 +116,32 @@ func Submit(ctx context.Context, c *api.Client, pl *Plan, prof *api.CrossCampusP
 		r.Err = err
 		return r
 	}
-	pid, err := cc.CreateOtherUniversityStudent(ctx, orgID, req)
-	if api.IsStatus(err, http.StatusConflict) {
-		// このアカウント（または電話番号）で参加登録済み。既存の参加者で続行する。
-		var meErr error
-		if pid, meErr = cc.MyParticipant(ctx, orgID, authToken); meErr != nil {
-			r.Err = fmt.Errorf("この大学には参加登録済みですが、登録情報を取得できませんでした: %w", errors.Join(err, meErr))
-			return r
+	pid, err := Registered(ctx, c, pl, authToken)
+	if err != nil {
+		r.Err = fmt.Errorf("参加登録の確認に失敗しました: %w", err)
+		return r
+	}
+	if pid != "" {
+		r.Note = "参加登録済み"
+	} else if pid, err = cc.CreateOtherUniversityStudent(ctx, orgID, req); err != nil {
+		if api.IsStatus(err, http.StatusConflict) {
+			r.Err = fmt.Errorf("参加登録できませんでした（この電話番号は別のアカウントで登録済みの可能性があります）: %w", err)
+		} else {
+			r.Err = fmt.Errorf("参加登録に失敗しました: %w", err)
 		}
-		r.Note = "参加登録済みのため既存の登録を使用"
-	} else if err != nil {
-		r.Err = fmt.Errorf("参加登録に失敗しました: %w", err)
 		return r
 	}
 
 	voteID, err := cc.CreateVote(ctx, orgID, pid, pl.Group.ID, authToken)
-	if err != nil {
-		if api.IsStatus(err, http.StatusConflict) || api.IsStatus(err, http.StatusForbidden) {
-			r.Err = fmt.Errorf("投票できませんでした（この大学では投票済みの可能性があります）: %w", err)
-		} else {
-			r.Err = fmt.Errorf("投票に失敗しました: %w", err)
-		}
+	switch {
+	case api.IsStatus(err, http.StatusConflict):
+		r.AlreadyVoted = true
+		return r
+	case api.IsStatus(err, http.StatusForbidden):
+		r.Err = fmt.Errorf("投票権限がありません: %w", err)
+		return r
+	case err != nil:
+		r.Err = fmt.Errorf("投票に失敗しました: %w", err)
 		return r
 	}
 	r.Voted = true

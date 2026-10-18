@@ -185,6 +185,45 @@ func runVote(ctx context.Context, c *api.Client, p *prompt.Prompter, o options, 
 		return errors.New("投票できる対象がありません")
 	}
 
+	// auth_token: Cross Campus で電話番号認証済みならSMS認証は不要
+	authToken := prof.AuthToken
+	if !prof.Profile.PhoneNumberVerified || authToken == "" {
+		authToken = ""
+		if o.dryRun {
+			p.Printf("（Cross Campus で電話番号が未認証のため、実際の送信時はSMS認証が必要です）\n")
+		} else {
+			p.Printf("\nCross Campus で電話番号が未認証のため、SMS認証を行います。\n")
+			if authToken, err = vote.SMSAuth(ctx, c, p, prof.Profile.PhoneNumber); err != nil {
+				return err
+			}
+		}
+	}
+
+	// 参加登録済み（＝投票済み）の大学を先に調べ、全部済みなら何も聞かずに終わる
+	pending := 0
+	for _, pl := range ok {
+		if authToken == "" {
+			pending++
+			continue
+		}
+		pid, err := vote.Registered(ctx, c, pl, authToken)
+		if err != nil {
+			p.Printf("（%s の参加登録状況を確認できませんでした: %v）\n", pl.Title(), err)
+			pending++
+			continue
+		}
+		reg := pid != ""
+		pl.Registered = &reg
+		if !reg {
+			pending++
+		}
+	}
+	if pending == 0 {
+		printPlans(p, plans)
+		p.Printf("\nすべて投票済みです。\n")
+		return nil
+	}
+
 	answers, asked, err := vote.ResolveAnswers(p, cfg, prof, false)
 	if err != nil {
 		return err
@@ -202,19 +241,6 @@ func runVote(ctx context.Context, c *api.Client, p *prompt.Prompter, o options, 
 			vote.ApplyToConfig(cfg, answers, prof)
 			if err := config.Save(o.configPath, cfg); err != nil {
 				p.Printf("（保存に失敗しました: %v）\n", err)
-			}
-		}
-	}
-
-	// auth_token: Cross Campus で電話番号認証済みならSMS認証は不要
-	authToken := prof.AuthToken
-	if !prof.Profile.PhoneNumberVerified || authToken == "" {
-		if o.dryRun {
-			p.Printf("（Cross Campus で電話番号が未認証のため、実際の送信時はSMS認証が必要です）\n")
-		} else {
-			p.Printf("\nCross Campus で電話番号が未認証のため、SMS認証を行います。\n")
-			if authToken, err = vote.SMSAuth(ctx, c, p, prof.Profile.PhoneNumber); err != nil {
-				return err
 			}
 		}
 	}
@@ -238,7 +264,7 @@ func runVote(ctx context.Context, c *api.Client, p *prompt.Prompter, o options, 
 	}
 	if !o.yes {
 		p.Printf("\n各大学のキャンペーン規約・プライバシーポリシー: <大学サイト>/terms-of-service , /privacy-policy\n")
-		yes, err := p.Confirm(fmt.Sprintf("キャンペーン規約及びプライバシーポリシーに同意し、%d件の投票を送信しますか？", len(ok)), false)
+		yes, err := p.Confirm(fmt.Sprintf("キャンペーン規約及びプライバシーポリシーに同意し、%d件の投票を送信しますか？", pending), false)
 		if err != nil {
 			return err
 		}
@@ -250,8 +276,11 @@ func runVote(ctx context.Context, c *api.Client, p *prompt.Prompter, o options, 
 	p.Printf("\n")
 	failed := 0
 	for _, pl := range ok {
+		// 参加登録済みでも投票だけ失敗していた場合に備えて送る（投票済みなら 409 でスキップ扱い）
 		r := vote.Submit(ctx, c, pl, prof, answers, authToken)
 		switch {
+		case r.AlreadyVoted:
+			p.Printf("- %s: この大学では投票済みのためスキップ\n", pl.Title())
 		case r.Err != nil && r.Voted:
 			p.Printf("△ %s: %v\n", pl.Title(), r.Err)
 		case r.Err != nil:
@@ -283,7 +312,11 @@ func printPlans(p *prompt.Prompter, plans []*vote.Plan) {
 			p.Printf("  %d. ✗ %s — %v\n", i+1, pl.Title(), pl.Err)
 			continue
 		}
-		p.Printf("  %d. %s（現在 %d票）\n", i+1, pl.Title(), pl.Group.TotalVoteCount)
+		status := ""
+		if pl.Registered != nil && *pl.Registered {
+			status = " — 投票済み"
+		}
+		p.Printf("  %d. %s（現在 %d票）%s\n", i+1, pl.Title(), pl.Group.TotalVoteCount, status)
 	}
 }
 

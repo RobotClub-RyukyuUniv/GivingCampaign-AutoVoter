@@ -37,12 +37,15 @@ gcvote
 3. 初回だけ、フォームの残りの項目を尋ねられます。保存すると次回からは聞かれません。
 4. 送信内容が表示されるので、規約・プライバシーポリシーに同意して送信します。
 
+すでに投票した大学は自動で判定してスキップします。同じ告知文を何度実行しても二重投票にはなりません。全部投票済みなら、何も聞かずに終了します。
+
 ```
 投票先:
   1. 滋賀県立大学 / ロボット部コンピュータ研究会（現在 199票）
   2. 東北大学 / 学友会人力飛行部Windnauts（現在 …票）
   ...
 ✓ 滋賀県立大学 / ロボット部コンピュータ研究会: 投票しました（メッセージ送信済み）
+- 東北大学 / 学友会人力飛行部Windnauts: この大学では投票済みのためスキップ
 ```
 
 その他の例:
@@ -50,7 +53,8 @@ gcvote
 ```sh
 gcvote announce.txt                      # 告知文をファイルで渡す
 gcvote 'https://usp.2026.giving-campaign.jp/groups?group=...'
-gcvote -dry-run announce.txt             # 送信せず内容だけ確認
+gcvote -dry-run announce.txt             # 送信せず内容と投票済みかどうかだけ確認
+gcvote -y announce.txt                   # 確認なしで送信（設定保存済みなら対話ゼロ）
 gcvote -m '応援しています！' announce.txt   # メッセージを指定
 gcvote config                            # 保存した回答を設定し直す
 gcvote login / gcvote logout             # ログインし直す / セッション削除

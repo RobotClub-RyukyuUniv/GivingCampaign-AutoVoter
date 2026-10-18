@@ -28,7 +28,7 @@ type call struct {
 }
 
 // fakeAPI はサイトのフロントエンドから読み取った応答を返す偽サーバー。
-func fakeAPI(t *testing.T, participantStatus int) (*httptest.Server, *[]call) {
+func fakeAPI(t *testing.T, registered bool, voteStatus int) (*httptest.Server, *[]call) {
 	var mu sync.Mutex
 	var calls []call
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -52,17 +52,23 @@ func fakeAPI(t *testing.T, participantStatus int) (*httptest.Server, *[]call) {
 		case "GET " + base + "/gc2026_groups":
 			json.NewEncoder(w).Encode([]map[string]any{{"id": groupID, "name": "テスト部", "total_vote_count": 3}})
 		case "POST " + base + "/gc2026_participants/other_university_bachelor_student":
-			w.WriteHeader(participantStatus)
-			if participantStatus == 200 {
-				json.NewEncoder(w).Encode(map[string]any{"id": partID})
-			} else {
-				json.NewEncoder(w).Encode(map[string]any{"message": "このCross Campusアカウントでは既に参加登録されています。"})
+			if registered {
+				t.Errorf("should not create participant when already registered")
 			}
+			json.NewEncoder(w).Encode(map[string]any{"id": partID})
 		case "POST " + base + "/gc2026_participants/me":
+			if !registered {
+				w.WriteHeader(404)
+				return
+			}
 			json.NewEncoder(w).Encode(map[string]any{"id": partID})
 		case "POST " + base + "/gc2026_participants/" + partID + "/gc2026_votes":
-			w.WriteHeader(201)
-			json.NewEncoder(w).Encode(map[string]any{"gc2026_vote_id": voteID})
+			w.WriteHeader(voteStatus)
+			if voteStatus == 201 {
+				json.NewEncoder(w).Encode(map[string]any{"gc2026_vote_id": voteID})
+			} else {
+				json.NewEncoder(w).Encode(map[string]any{"code": voteStatus, "message": "Conflict"})
+			}
 		case "POST " + base + "/gc2026_participants/" + partID + "/gc2026_votes/" + voteID + "/gc2026_message":
 			w.WriteHeader(201)
 		default:
@@ -114,7 +120,7 @@ func client(srv *httptest.Server) *api.Client {
 }
 
 func TestResolveAndSubmit(t *testing.T) {
-	srv, calls := fakeAPI(t, 200)
+	srv, calls := fakeAPI(t, false, 201)
 	c := client(srv)
 	targets := []target.Target{
 		{Host: "usp.2026.giving-campaign.jp", Slug: "usp", GroupID: groupID},
@@ -135,7 +141,7 @@ func TestResolveAndSubmit(t *testing.T) {
 
 	var post []call
 	for _, cl := range *calls {
-		if cl.Method == "POST" {
+		if cl.Method == "POST" && !strings.HasSuffix(cl.Path, "/me") {
 			post = append(post, cl)
 		}
 		if cl.Origin != "https://usp.2026.giving-campaign.jp" {
@@ -184,27 +190,28 @@ func TestResolveAndSubmit(t *testing.T) {
 	}
 }
 
-func TestSubmitAlreadyRegistered(t *testing.T) {
-	srv, calls := fakeAPI(t, 409)
+func TestSubmitRegisteredButNotVoted(t *testing.T) {
+	srv, _ := fakeAPI(t, true, 201)
 	c := client(srv)
 	plans := Resolve(context.Background(), c, []target.Target{{Host: "usp.2026.giving-campaign.jp", Slug: "usp", GroupID: groupID}})
 	r := Submit(context.Background(), c, plans[0], testProfile(), testAnswers(), "tok")
-	if r.Err != nil || !r.Voted {
+	if r.Err != nil || !r.Voted || r.Note == "" {
 		t.Fatalf("result = %+v", r)
 	}
-	var sawMe bool
-	for _, cl := range *calls {
-		if strings.HasSuffix(cl.Path, "/gc2026_participants/me") {
-			sawMe = true
-		}
-	}
-	if !sawMe {
-		t.Errorf("should fall back to participants/me on 409")
+}
+
+func TestSubmitAlreadyVoted(t *testing.T) {
+	srv, _ := fakeAPI(t, true, 409)
+	c := client(srv)
+	plans := Resolve(context.Background(), c, []target.Target{{Host: "usp.2026.giving-campaign.jp", Slug: "usp", GroupID: groupID}})
+	r := Submit(context.Background(), c, plans[0], testProfile(), testAnswers(), "tok")
+	if r.Err != nil || r.Voted || !r.AlreadyVoted {
+		t.Fatalf("result = %+v", r)
 	}
 }
 
 func TestOneVotePerUniversity(t *testing.T) {
-	srv, _ := fakeAPI(t, 200)
+	srv, _ := fakeAPI(t, false, 201)
 	plans := Resolve(context.Background(), client(srv), []target.Target{
 		{Host: "usp.2026.giving-campaign.jp", Slug: "usp", GroupID: groupID},
 		{Host: "usp.2026.giving-campaign.jp", Slug: "usp", GroupID: groupID + "x"},
