@@ -18,13 +18,24 @@ Giving Campaign 2026 で他大学の団体を応援（投票）する CLI です
 
 ## インストール
 
-Go 1.23 以上が必要です。
+**ドキュメントとダウンロード: https://robotclub-ryukyuuniv.github.io/GivingCampaign-AutoVoter/**
 
 ```sh
+# macOS / Linux
+curl -fsSL https://robotclub-ryukyuuniv.github.io/GivingCampaign-AutoVoter/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://robotclub-ryukyuuniv.github.io/GivingCampaign-AutoVoter/install.ps1 | iex
+```
+
+```sh
+# Go がある場合
 go install github.com/RobotClub-RyukyuUniv/GivingCampaign-AutoVoter/cmd/gcvote@latest
 ```
 
-リポジトリを clone した場合は `go build -o gcvote ./cmd/gcvote` でビルドできます。
+ビルド済みのファイルは [Releases](https://github.com/RobotClub-RyukyuUniv/GivingCampaign-AutoVoter/releases/latest) からもダウンロードできます。
 
 ## 使い方
 
@@ -102,6 +113,8 @@ gcvote は手元に `http://127.0.0.1:<port>` を立て、ログイン後にそ�
 ```sh
 go test ./...
 ```
+
+リリースするには `v1.2.3` のようなタグを push します。GitHub Actions が GoReleaser で各 OS 向けにビルドし、Releases に公開します。`docs/` を変更して main に push すると、GitHub Pages が更新されます。
 
 テストは偽の API サーバーで動くので、本番には送信しません。
 `-v` を付けると通信内容が表示されます（個人情報が含まれるので共有しないこと）。

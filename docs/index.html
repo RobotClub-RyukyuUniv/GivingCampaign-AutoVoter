@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gcvote — Giving Campaign 相互投票をコマンド1つで</title>
+<meta name="description" content="Giving Campaign 2026 で他大学の団体を応援（投票）するCLI。告知文を貼り付けるだけで、書かれている団体すべてに投票します。">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%230b7f89%22/%3E%3Cpath d=%22M9 16.5l4.5 4.5L23 11%22 fill=%22none%22 stroke=%22white%22 stroke-width=%223.5%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E">
+<script>
+  // ちらつき防止のため、保存されたテーマを描画前に反映する
+  try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<style>
+  :root {
+    --bg: #ffffff; --bg-soft: #f4f6f8; --text: #1b2130; --muted: #5f6878; --line: #e4e7ec;
+    --accent: #0b7f89; --accent-2: #4f6bed; --accent-weak: #e2f3f4;
+    --code-bg: #12161f; --code-text: #e6e9ef; --warn: #a06800;
+    --tile: #ffffff; --tile-shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1117; --bg-soft: #151a22; --text: #e7eaf0; --muted: #9aa3b2; --line: #262d38;
+    --accent: #38c3cd; --accent-2: #8b9cff; --accent-weak: #12343a;
+    --code-bg: #090c11; --warn: #e2a93f;
+    --tile: #171c25; --tile-shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e1117; --bg-soft: #151a22; --text: #e7eaf0; --muted: #9aa3b2; --line: #262d38;
+      --accent: #38c3cd; --accent-2: #8b9cff; --accent-weak: #12343a;
+      --code-bg: #090c11; --warn: #e2a93f;
+      --tile: #171c25; --tile-shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text); line-height: 1.75;
+    font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+    transition: background-color .2s, color .2s;
+  }
+  a { color: var(--accent); }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 20px; }
+
+  /* ヘッダー */
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; }
+  .brand { font-weight: 700; letter-spacing: .02em; text-decoration: none; color: var(--text); }
+  .topbar nav { display: flex; align-items: center; gap: 18px; font-size: 14px; }
+  .topbar nav a { color: var(--muted); text-decoration: none; }
+  .topbar nav a:hover { color: var(--text); }
+  .theme-toggle {
+    width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line); background: transparent;
+    color: var(--text); cursor: pointer; display: grid; place-items: center;
+  }
+  .theme-toggle svg { width: 18px; height: 18px; }
+  .theme-toggle .sun { display: none; }
+  :root[data-theme="dark"] .theme-toggle .sun { display: block; }
+  :root[data-theme="dark"] .theme-toggle .moon { display: none; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .theme-toggle .sun { display: block; }
+    :root:not([data-theme="light"]) .theme-toggle .moon { display: none; }
+  }
+  @media (max-width: 560px) { .topbar nav a { display: none; } }
+
+  /* ヒーロー */
+  .hero { padding: 40px 0 8px; text-align: center; }
+  .hero .eyebrow { color: var(--accent); font-weight: 600; font-size: 14px; letter-spacing: .08em; }
+  .hero h1 { font-size: clamp(30px, 6vw, 48px); line-height: 1.25; margin: 8px 0 14px; }
+  .hero h1 .grad { background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero p { color: var(--muted); font-size: 17px; margin: 0 auto; max-width: 34em; }
+  .hero .cta { margin: 28px 0 6px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px; background: var(--accent); color: #fff; text-decoration: none;
+    font-weight: 700; padding: 13px 26px; border-radius: 999px; font-size: 16px;
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  :root[data-theme="dark"] .btn { color: #06272a; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn { color: #06272a; } }
+  .btn:hover { filter: brightness(1.07); }
+  .btn svg { width: 18px; height: 18px; }
+  .version { font-size: 13px; color: var(--muted); min-height: 1.5em; }
+
+  /* できること（ビジュアル） */
+  .flow { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 44px 0 28px; flex-wrap: wrap; }
+  .flow .step {
+    display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: 14px;
+    background: var(--tile); box-shadow: var(--tile-shadow); border: 1px solid var(--line); font-weight: 600; font-size: 15px;
+  }
+  .flow .step svg { width: 22px; height: 22px; color: var(--accent); flex: none; }
+  .flow .step.done svg { color: #22a35a; }
+  .flow .arrow { color: var(--muted); width: 22px; height: 22px; }
+  .flow .checks { display: flex; gap: 3px; }
+  .flow .checks span {
+    width: 20px; height: 20px; border-radius: 50%; background: #22a35a; color: #fff; display: grid; place-items: center;
+    font-size: 12px; font-weight: 800;
+  }
+  @media (max-width: 560px) { .flow .arrow { transform: rotate(90deg); } .flow { flex-direction: column; } }
+
+  .features { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 0 0 12px; }
+  @media (max-width: 760px) { .features { grid-template-columns: repeat(2, 1fr); } }
+  .feature {
+    background: var(--tile); border: 1px solid var(--line); border-radius: 18px; padding: 22px 16px 18px;
+    text-align: center; box-shadow: var(--tile-shadow);
+  }
+  .feature .icon {
+    width: 56px; height: 56px; margin: 0 auto 12px; border-radius: 16px; display: grid; place-items: center;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--accent-2) 18%, transparent));
+    color: var(--accent);
+  }
+  .feature .icon svg { width: 28px; height: 28px; }
+  .feature b { display: block; font-size: 17px; line-height: 1.4; }
+  .feature span { display: block; color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+  /* 本文（シンプル） */
+  section { padding: 36px 0 8px; border-top: 1px solid var(--line); margin-top: 36px; }
+  h2 { font-size: 22px; margin: 0 0 14px; }
+  h3 { font-size: 16px; margin: 22px 0 6px; }
+  p, li { font-size: 15.5px; }
+  .muted { color: var(--muted); font-size: 14px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9em; background: var(--bg-soft); padding: .12em .4em; border-radius: 5px; }
+  pre { position: relative; background: var(--code-bg); color: var(--code-text); border-radius: 10px; padding: 14px 16px; overflow-x: auto; margin: 8px 0 14px; font-size: 14px; line-height: 1.6; border: 1px solid var(--line); }
+  pre.has-copy { padding-right: 84px; }
+  pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+  pre .c { color: #8b95a7; } pre .ok { color: #6fdc9b; } pre .skip { color: #aab2bf; } pre .ask { color: #7fd3da; }
+  button.copy {
+    position: absolute; top: 8px; right: 8px; font: 12px system-ui, sans-serif; color: #c9ced8;
+    background: #252b37; border: 1px solid #39404e; border-radius: 6px; padding: 3px 9px; cursor: pointer;
+  }
+  .tabs { display: flex; gap: 4px; margin: 4px 0 0; border-bottom: 1px solid var(--line); }
+  .tabs button {
+    font: inherit; font-size: 14px; padding: 8px 14px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    background: transparent; color: var(--muted); cursor: pointer;
+  }
+  .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+  .tabpanel { padding-top: 10px; }
+  .tabpanel[hidden] { display: none; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { text-align: left; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  td code { white-space: nowrap; }
+  ol { padding-left: 1.3em; } ol > li { margin-bottom: 10px; }
+  .note { color: var(--muted); font-size: 14px; border-left: 3px solid var(--warn); padding: 2px 0 2px 12px; margin: 14px 0; }
+  details { border-bottom: 1px solid var(--line); padding: 10px 0; }
+  summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+  details > div { padding: 4px 0 0; }
+  details p { margin: 6px 0; }
+  footer { color: var(--muted); font-size: 13px; padding: 40px 0 48px; border-top: 1px solid var(--line); margin-top: 40px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="topbar">
+  <a class="brand" href="#">gcvote</a>
+  <nav>
+    <a href="#download">ダウンロード</a>
+    <a href="#start">はじめかた</a>
+    <a href="#faq">困ったとき</a>
+    <a href="https://github.com/RobotClub-RyukyuUniv/GivingCampaign-AutoVoter">GitHub</a>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="ダークモード切り替え" title="ダークモード切り替え">
+      <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </nav>
+</div>
+
+<header class="hero">
+  <div class="eyebrow">GIVING CAMPAIGN 2026</div>
+  <h1>相互投票を、<br><span class="grad">貼り付けるだけ</span>で。</h1>
+  <p>告知文をターミナルに貼ると、書かれている団体すべてに応援（投票）します。</p>
+  <div class="cta">
+    <a class="btn" id="dl-btn" href="#download">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+      <span id="dl-label">ダウンロード</span>
+    </a>
+    <span class="version" id="version"></span>
+  </div>
+</header>
+
+<div class="flow" aria-label="告知文を貼ると gcvote が投票まで行う">
+  <div class="step">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4.5V3h6v1.5M9 10h6M9 14h6M9 18h3"/></svg>
+    告知文を貼る
+  </div>
+  <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+  <div class="step">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></svg>
+    gcvote
+  </div>
+  <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+  <div class="step done">
+    <span class="checks"><span>✓</span><span>✓</span><span>✓</span><span>✓</span></span>
+    全団体に投票完了
+  </div>
+</div>
+
+<div class="features">
+  <div class="feature">
+    <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4.5V3h6v1.5M9.5 13l2 2 3.5-4"/></svg></div>
+    <b>貼るだけ</b><span>URLもコメント指定も自動で読む</span>
+  </div>
+  <div class="feature">
+    <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="4"/><path d="M3 20c0-3.5 3-6 7-6 1.4 0 2.6.3 3.6.8M15 18l2 2 4-4"/></svg></div>
+    <b>入力ほぼゼロ</b><span>Cross Campusから自動入力</span>
+  </div>
+  <div class="feature">
+    <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6l8-3z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg></div>
+    <b>二重投票なし</b><span>投票済みは自動でスキップ</span>
+  </div>
+  <div class="feature">
+    <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg></div>
+    <b>数秒で完了</b><span>ブラウザもChromeも不要</span>
+  </div>
+</div>
+
+<section id="download">
+  <h2>ダウンロード</h2>
+  <p>コマンド1行でインストールできます。</p>
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="mac">macOS</button>
+    <button role="tab" aria-selected="false" data-tab="win">Windows</button>
+    <button role="tab" aria-selected="false" data-tab="linux">Linux</button>
+    <button role="tab" aria-selected="false" data-tab="go">Go</button>
+  </div>
+  <div class="tabpanel" data-panel="mac">
+    <p>「ターミナル」に貼り付けて Enter:</p>
+    <pre><code>curl -fsSL https://robotclub-ryukyuuniv.github.io/GivingCampaign-AutoVoter/install.sh | sh</code></pre>
+  </div>
+  <div class="tabpanel" data-panel="win" hidden>
+    <p>「PowerShell」に貼り付けて Enter（終わったらターミナルを開き直す）:</p>
+    <pre><code>irm https://robotclub-ryukyuuniv.github.io/GivingCampaign-AutoVoter/install.ps1 | iex</code></pre>
+  </div>
+  <div class="tabpanel" data-panel="linux" hidden>
+    <pre><code>curl -fsSL https://robotclub-ryukyuuniv.github.io/GivingCampaign-AutoVoter/install.sh | sh</code></pre>
+  </div>
+  <div class="tabpanel" data-panel="go" hidden>
+    <pre><code>go install github.com/RobotClub-RyukyuUniv/GivingCampaign-AutoVoter/cmd/gcvote@latest</code></pre>
+  </div>
+
+  <h3>ファイルを直接ダウンロード</h3>
+  <table>
+    <thead><tr><th>OS</th><th>Apple Silicon / ARM</th><th>Intel / AMD</th></tr></thead>
+    <tbody>
+      <tr><td>macOS</td><td><a data-asset href="#">gcvote_darwin_arm64.tar.gz</a></td><td><a data-asset href="#">gcvote_darwin_amd64.tar.gz</a></td></tr>
+      <tr><td>Windows</td><td><a data-asset href="#">gcvote_windows_arm64.zip</a></td><td><a data-asset href="#">gcvote_windows_amd64.zip</a></td></tr>
+      <tr><td>Linux</td><td><a data-asset href="#">gcvote_linux_arm64.tar.gz</a></td><td><a data-asset href="#">gcvote_linux_amd64.tar.gz</a></td></tr>
+    </tbody>
+  </table>
+  <p class="muted">更新内容と過去のバージョンは <a href="https://github.com/RobotClub-RyukyuUniv/GivingCampaign-AutoVoter/releases">Releases</a> へ。</p>
+</section>
+
+<section id="start">
+  <h2>はじめかた</h2>
+  <ol>
+    <li><b>Cross Campus を準備</b> — プロフィールを入力し、電話番号を認証しておくと SMS 認証が不要になります。</li>
+    <li><b><code>gcvote</code> を起動</b>して告知文を貼り付け、Enter を2回押して確定。</li>
+    <li><b>初回だけ</b>ブラウザで Cross Campus にログインし、4つの質問（公開への同意・卒業見込み年度・団体との関係性・知ったきっかけ）に答えます。次回からは不要です。</li>
+    <li>内容を確認して <code>y</code> で送信。</li>
+  </ol>
+
+  <h3>実行例</h3>
+<pre><code><span class="c">$</span> gcvote
+投票ページのURL、または告知文をそのまま貼り付けてください（空行を2回で確定）:
+<span class="c">（告知文を貼り付け）</span>
+
+<span class="ask">告知文の指定どおり、応援メッセージを「琉球大学 Robotサークル」にしますか？ [Y/n]:</span> y
+投票先:
+  1. 東北大学 / 学友会人力飛行部Windnauts（現在 509票） — 投票済み
+  2. 埼玉大学 / 埼玉大学宇宙工学サークルあかとき（現在 224票）
+  3. 徳島大学 / エコランプロジェクト（現在 98票）
+<span class="ask">キャンペーン規約及びプライバシーポリシーに同意し、2件の投票を送信しますか？ [y/N]:</span> y
+
+<span class="skip">- 東北大学 / 学友会人力飛行部Windnauts: この大学では投票済みのためスキップ</span>
+<span class="ok">✓ 埼玉大学 / 埼玉大学宇宙工学サークルあかとき: 投票しました（メッセージ送信済み）</span>
+<span class="ok">✓ 徳島大学 / エコランプロジェクト: 投票しました（メッセージ送信済み）</span></code></pre>
+</section>
+
+<section id="usage">
+  <h2>コマンド</h2>
+  <table>
+    <tbody>
+      <tr><td><code>gcvote</code></td><td>告知文や URL を貼り付けて投票</td></tr>
+      <tr><td><code>gcvote 告知文.txt</code></td><td>告知文をファイルで渡す（URL を直接渡すことも可）</td></tr>
+      <tr><td><code>gcvote -dry-run …</code></td><td>送信せず、内容と投票済みかどうかを確認</td></tr>
+      <tr><td><code>gcvote -m 'メッセージ' …</code></td><td>応援メッセージを指定</td></tr>
+      <tr><td><code>gcvote -y …</code></td><td>確認なしで送信</td></tr>
+      <tr><td><code>gcvote config</code></td><td>保存した回答を設定し直す</td></tr>
+      <tr><td><code>gcvote login</code> / <code>logout</code></td><td>ログインし直す / ログイン情報を削除</td></tr>
+      <tr><td><code>gcvote version</code></td><td>バージョンを表示</td></tr>
+    </tbody>
+  </table>
+  <p class="note">応援は1つの大学につき1人1回までです。オプションは URL やファイル名より前に書いてください。</p>
+</section>
+
+<section id="faq">
+  <h2>困ったとき</h2>
+  <details>
+    <summary>ログイン後、ターミナルに戻ってこない</summary>
+    <div>
+      <p>アドレスバーの <code>…/auth/callback?token=…</code> の URL をターミナルに貼り付けて Enter。</p>
+      <p>だめなら、投票フォームで Cross Campus にログインし、そのタブのコンソールで次を実行して出た値を貼り付けます。</p>
+      <pre><code>sessionStorage.getItem("cc_session_id")</code></pre>
+    </div>
+  </details>
+  <details>
+    <summary>Mac で「開発元を検証できないため開けません」と出る</summary>
+    <div><p>上の <code>curl … | sh</code> でインストールするか、次を実行してください。</p><pre><code>xattr -d com.apple.quarantine ./gcvote</code></pre></div>
+  </details>
+  <details>
+    <summary>SMS 認証を求められる</summary>
+    <div><p>Cross Campus で電話番号が未認証です。届いた8桁のコードを入力してください（<code>r</code> で再送）。</p></div>
+  </details>
+  <details>
+    <summary>「プロフィールに未入力の項目があります」と出る</summary>
+    <div><p>Cross Campus のプロフィールに入力漏れがあります。入力してから再実行してください。</p></div>
+  </details>
+  <details>
+    <summary>自分の大学の団体に投票したい</summary>
+    <div><p>現在は他大学への投票のみ対応しています。自分の大学はサイトから投票してください。</p></div>
+  </details>
+  <details>
+    <summary>急に動かなくなった</summary>
+    <div><p>サイトの仕様変更の可能性があります。<code>gcvote version</code> の結果を添えて <a href="https://github.com/RobotClub-RyukyuUniv/GivingCampaign-AutoVoter/issues">Issues</a> へ。</p></div>
+  </details>
+</section>
+
+<section id="privacy">
+  <h2>個人情報について</h2>
+  <p>名前や電話番号は Cross Campus から毎回取得し、gcvote には保存しません。保存するのはログイン情報とフォームの回答だけで、本人だけが読める設定ディレクトリ（macOS: <code>~/Library/Application Support/gcvote/</code>）に置かれます。</p>
+  <p class="note">公式の API ではないため、サイトの更新で動かなくなることがあります。自分のアカウントでの投票を楽にするためのツールです。</p>
+</section>
+
+<footer>琉球大学 Robotサークル · <a href="https://github.com/RobotClub-RyukyuUniv/GivingCampaign-AutoVoter">GitHub</a> · MIT License</footer>
+</div>
+
+<script>
+(() => {
+  const repo = "RobotClub-RyukyuUniv/GivingCampaign-AutoVoter";
+  const latest = name => `https://github.com/${repo}/releases/latest/download/${name}`;
+  const root = document.documentElement;
+
+  // テーマ切り替え（未選択なら OS の設定に従う）
+  const isDark = () => root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.getElementById("theme-toggle").addEventListener("click", () => {
+    const next = isDark() ? "light" : "dark";
+    root.dataset.theme = next;
+    try { localStorage.setItem("theme", next); } catch (e) {}
+  });
+
+  document.querySelectorAll("a[data-asset]").forEach(a => { a.href = latest(a.textContent.trim()); });
+
+  // OS を推定してボタンとタブを合わせる
+  const ua = navigator.userAgent;
+  const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+  let os = "mac";
+  if (/Win/i.test(platform) || /Windows/i.test(ua)) os = "win";
+  else if (/Linux|X11/i.test(platform) && !/Android/i.test(ua)) os = "linux";
+
+  const select = name => {
+    document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+    document.querySelectorAll(".tabpanel").forEach(p => { p.hidden = p.dataset.panel !== name; });
+  };
+  document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => select(b.dataset.tab)));
+  select(os);
+
+  const btn = document.getElementById("dl-btn"), label = document.getElementById("dl-label");
+  const setMain = (file, text) => { btn.href = latest(file); label.textContent = text; };
+  if (os === "win") setMain("gcvote_windows_amd64.zip", "Windows 版をダウンロード");
+  else if (os === "linux") setMain("gcvote_linux_amd64.tar.gz", "Linux 版をダウンロード");
+  else {
+    setMain("gcvote_darwin_arm64.tar.gz", "Mac 版をダウンロード");
+    if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+      navigator.userAgentData.getHighEntropyValues(["architecture"]).then(v => {
+        if (v.architecture === "x86") setMain("gcvote_darwin_amd64.tar.gz", "Mac (Intel) 版をダウンロード");
+      }).catch(() => {});
+    }
+  }
+
+  // 最新バージョンの表示
+  fetch(`https://api.github.com/repos/${repo}/releases/latest`)
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(rel => {
+      const d = new Date(rel.published_at);
+      document.getElementById("version").textContent = `最新版 ${rel.tag_name} · ${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+    })
+    .catch(() => {});
+
+  // 1行のコマンドにコピーボタン
+  document.querySelectorAll("pre").forEach(pre => {
+    const text = pre.innerText.trim();
+    if (text.includes("\n")) return;
+    const b = document.createElement("button");
+    b.className = "copy"; b.type = "button"; b.textContent = "コピー";
+    b.addEventListener("click", () => navigator.clipboard.writeText(text).then(() => {
+      b.textContent = "コピーしました"; setTimeout(() => (b.textContent = "コピー"), 1500);
+    }));
+    pre.classList.add("has-copy");
+    pre.appendChild(b);
+  });
+})();
+</script>
+</body>
+</html>

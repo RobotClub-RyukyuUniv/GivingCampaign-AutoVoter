@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: gcvote
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - main: ./cmd/gcvote
+    binary: gcvote
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Tag }}
+
+archives:
+  # ファイル名にバージョンを入れない。releases/latest/download/<名前> が常に最新版を指すようにするため。
+  - name_template: "gcvote_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+      - config.example.yaml
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs"
+      - "^ci"
+
+release:
+  footer: |
+    ## インストール
+    - macOS / Linux: `curl -fsSL https://robotclub-ryukyuuniv.github.io/GivingCampaign-AutoVoter/install.sh | sh`
+    - Windows: `gcvote_windows_amd64.zip` を展開して `gcvote.exe` を使う
+    - 使い方: https://robotclub-ryukyuuniv.github.io/GivingCampaign-AutoVoter/

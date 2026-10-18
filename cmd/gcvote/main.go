@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -23,6 +24,9 @@ import (
 	"github.com/RobotClub-RyukyuUniv/GivingCampaign-AutoVoter/internal/target"
 	"github.com/RobotClub-RyukyuUniv/GivingCampaign-AutoVoter/internal/vote"
 )
+
+// version はリリース時に -ldflags "-X main.version=..." で埋め込まれる。
+var version = "dev"
 
 type options struct {
 	configPath string
@@ -62,6 +66,7 @@ func run(ctx context.Context, args []string) error {
   gcvote login                        Cross Campus にログイン
   gcvote logout                       保存済みのセッションを削除
   gcvote config                       保存済みの回答を設定し直す
+  gcvote version                      バージョンを表示
 
 オプション:
 `)
@@ -71,6 +76,9 @@ func run(ctx context.Context, args []string) error {
 	sub := ""
 	if len(args) > 0 {
 		switch args[0] {
+		case "version", "-version", "--version":
+			fmt.Println("gcvote", currentVersion())
+			return nil
 		case "login", "logout", "config", "vote":
 			sub, args = args[0], args[1:]
 		}
@@ -304,6 +312,17 @@ func runVote(ctx context.Context, c *api.Client, p *prompt.Prompter, o options, 
 }
 
 var timeNow = time.Now
+
+// currentVersion は埋め込まれたバージョン、無ければ go install 時のモジュールバージョンを返す。
+func currentVersion() string {
+	if version != "dev" {
+		return version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return bi.Main.Version
+	}
+	return version
+}
 
 func printPlans(p *prompt.Prompter, plans []*vote.Plan) {
 	p.Printf("投票先:\n")
