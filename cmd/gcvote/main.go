@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"sort"
 	"strings"
 	"time"
 
@@ -149,16 +150,21 @@ func runVote(ctx context.Context, c *api.Client, p *prompt.Prompter, o options, 
 	if err != nil {
 		return err
 	}
-	targets, perrs := target.Parse(text)
-	for _, e := range perrs {
-		p.Printf("スキップ: %v\n", e)
-	}
-	if len(targets) == 0 {
+	targets, invalid := target.Parse(text)
+	if len(targets) == 0 && len(invalid) == 0 {
 		return errors.New("投票先のURLが見つかりませんでした")
 	}
 
 	p.Printf("\n投票先を確認しています…\n")
 	plans := vote.Resolve(ctx, c, targets)
+	for _, iv := range invalid {
+		plans = append(plans, &vote.Plan{Target: target.Target{Label: iv.Label, Pos: iv.Pos}, RawURL: iv.URL, Err: iv.Err})
+	}
+	sort.SliceStable(plans, func(i, j int) bool { return plans[i].Target.Pos < plans[j].Target.Pos })
+	if countOK(plans) == 0 {
+		printPlans(p, plans)
+		return errors.New("投票できる対象がありません")
+	}
 
 	cfg, err := config.Load(o.configPath)
 	if err != nil {
@@ -192,6 +198,7 @@ func runVote(ctx context.Context, c *api.Client, p *prompt.Prompter, o options, 
 		printPlans(p, plans)
 		return errors.New("投票できる対象がありません")
 	}
+	skipped := len(plans) - len(ok)
 
 	// auth_token: Cross Campus で電話番号認証済みならSMS認証は不要
 	authToken := prof.AuthToken
@@ -228,6 +235,10 @@ func runVote(ctx context.Context, c *api.Client, p *prompt.Prompter, o options, 
 	}
 	if pending == 0 {
 		printPlans(p, plans)
+		if skipped > 0 {
+			p.Printf("\n投票できるものはすべて投票済みです（✗ の %d件は投票できません）。\n", skipped)
+			return fmt.Errorf("%d件は投票できませんでした", skipped)
+		}
 		p.Printf("\nすべて投票済みです。\n")
 		return nil
 	}
@@ -236,8 +247,11 @@ func runVote(ctx context.Context, c *api.Client, p *prompt.Prompter, o options, 
 	if err != nil {
 		return err
 	}
-	if answers.Message, err = vote.ResolveMessage(p, o.message, target.SuggestMessage(text), cfg.Message, o.yes); err != nil {
+	if answers.Message, err = vote.ResolveMessage(p, o.message, target.SuggestMessage(text), cfg.Message, prof.Profile.UniversityName, o.yes); err != nil {
 		return err
+	}
+	if cfg.Message == "" {
+		asked = true // 初回は応援メッセージも保存して、次回から Enter だけで送れるようにする
 	}
 	if err := answers.Validate(timeNow()); err != nil {
 		return err
@@ -282,33 +296,46 @@ func runVote(ctx context.Context, c *api.Client, p *prompt.Prompter, o options, 
 	}
 
 	p.Printf("\n")
-	failed := 0
+	var voted, already, failed int
 	for _, pl := range ok {
 		// 参加登録済みでも投票だけ失敗していた場合に備えて送る（投票済みなら 409 でスキップ扱い）
 		r := vote.Submit(ctx, c, pl, prof, answers, authToken)
 		switch {
 		case r.AlreadyVoted:
+			already++
 			p.Printf("- %s: この大学では投票済みのためスキップ\n", pl.Title())
 		case r.Err != nil && r.Voted:
+			voted++
+			failed++
 			p.Printf("△ %s: %v\n", pl.Title(), r.Err)
 		case r.Err != nil:
 			failed++
 			p.Printf("✗ %s: %v\n", pl.Title(), r.Err)
 		default:
-			extra := ""
-			if r.Message {
-				extra = "（メッセージ送信済み）"
-			}
-			if r.Note != "" {
-				extra += "（" + r.Note + "）"
-			}
-			p.Printf("✓ %s: 投票しました%s\n", pl.Title(), extra)
+			voted++
+			p.Printf("✓ %s: 投票しました（メッセージ送信済み）\n", pl.Title())
 		}
 	}
-	if failed > 0 {
-		return fmt.Errorf("%d件の投票に失敗しました", failed)
+	for _, pl := range plans {
+		if pl.Err != nil {
+			p.Printf("✗ %s: %v\n", pl.Title(), pl.Err)
+		}
+	}
+	p.Printf("\n結果: 投票 %d件 / 投票済み %d件 / エラー %d件\n", voted, already, failed+skipped)
+	if failed+skipped > 0 {
+		return fmt.Errorf("%d件は投票できませんでした（上の ✗ の理由を確認してください）", failed+skipped)
 	}
 	return nil
+}
+
+func countOK(plans []*vote.Plan) int {
+	n := 0
+	for _, pl := range plans {
+		if pl.Err == nil {
+			n++
+		}
+	}
+	return n
 }
 
 var timeNow = time.Now
@@ -329,6 +356,9 @@ func printPlans(p *prompt.Prompter, plans []*vote.Plan) {
 	for i, pl := range plans {
 		if pl.Err != nil {
 			p.Printf("  %d. ✗ %s — %v\n", i+1, pl.Title(), pl.Err)
+			if pl.RawURL != "" && pl.RawURL != pl.Title() {
+				p.Printf("        %s\n", pl.RawURL)
+			}
 			continue
 		}
 		status := ""
@@ -355,9 +385,11 @@ func runConfig(ctx context.Context, c *api.Client, p *prompt.Prompter, o options
 	if err != nil {
 		return err
 	}
-	msg, err := p.String("応援メッセージの既定値（告知文に指定があればそちらを優先）", cfg.Message)
-	if err != nil {
-		return err
+	var msg string
+	for msg == "" {
+		if msg, err = p.String("応援メッセージ（投票時に Enter だけで送れる既定値）", vote.DefaultMessage("", cfg.Message, prof.Profile.UniversityName)); err != nil {
+			return err
+		}
 	}
 	vote.ApplyToConfig(cfg, a, prof)
 	cfg.Message = msg

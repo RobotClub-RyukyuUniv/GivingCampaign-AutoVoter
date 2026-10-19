@@ -255,8 +255,8 @@
   <ol>
     <li><b>Cross Campus を準備</b> — プロフィールを入力し、電話番号を認証しておくと SMS 認証が不要になります。</li>
     <li><b><code>gcvote</code> を起動</b>して告知文を貼り付け、Enter を2回押して確定。</li>
-    <li><b>初回だけ</b>ブラウザで Cross Campus にログインし、4つの質問（公開への同意・卒業見込み年度・団体との関係性・知ったきっかけ）に答えます。次回からは不要です。</li>
-    <li>内容を確認して <code>y</code> で送信。</li>
+    <li><b>初回だけ</b>ブラウザで Cross Campus にログインし、質問（公開への同意・卒業見込み年度・団体との関係性・知ったきっかけ・応援メッセージ）に答えます。次回からは不要です。</li>
+    <li>応援メッセージは保存した文面が出るので Enter、内容を確認して <code>y</code> で送信。</li>
   </ol>
 
   <h3>実行例</h3>
@@ -264,16 +264,20 @@
 投票ページのURL、または告知文をそのまま貼り付けてください（空行を2回で確定）:
 <span class="c">（告知文を貼り付け）</span>
 
-<span class="ask">告知文の指定どおり、応援メッセージを「琉球大学 Robotサークル」にしますか？ [Y/n]:</span> y
+告知文の指定: コメント欄に「琉球大学 Robotサークル」
+<span class="ask">応援メッセージ（Enterでそのまま） [琉球大学 Robotサークルです。応援しています！]:</span> <span class="c">⏎</span>
 投票先:
   1. 東北大学 / 学友会人力飛行部Windnauts（現在 509票） — 投票済み
   2. 埼玉大学 / 埼玉大学宇宙工学サークルあかとき（現在 224票）
   3. 徳島大学 / エコランプロジェクト（現在 98票）
+  4. ✗ ⑤… — 団体IDが不完全です（URLが途中で切れていないか確認してください）
 <span class="ask">キャンペーン規約及びプライバシーポリシーに同意し、2件の投票を送信しますか？ [y/N]:</span> y
 
 <span class="skip">- 東北大学 / 学友会人力飛行部Windnauts: この大学では投票済みのためスキップ</span>
 <span class="ok">✓ 埼玉大学 / 埼玉大学宇宙工学サークルあかとき: 投票しました（メッセージ送信済み）</span>
-<span class="ok">✓ 徳島大学 / エコランプロジェクト: 投票しました（メッセージ送信済み）</span></code></pre>
+<span class="ok">✓ 徳島大学 / エコランプロジェクト: 投票しました（メッセージ送信済み）</span>
+
+結果: 投票 2件 / 投票済み 1件 / エラー 1件</code></pre>
 </section>
 
 <section id="usage">
@@ -283,7 +287,7 @@
       <tr><td><code>gcvote</code></td><td>告知文や URL を貼り付けて投票</td></tr>
       <tr><td><code>gcvote 告知文.txt</code></td><td>告知文をファイルで渡す（URL を直接渡すことも可）</td></tr>
       <tr><td><code>gcvote -dry-run …</code></td><td>送信せず、内容と投票済みかどうかを確認</td></tr>
-      <tr><td><code>gcvote -m 'メッセージ' …</code></td><td>応援メッセージを指定</td></tr>
+      <tr><td><code>gcvote -m 'メッセージ' …</code></td><td>応援メッセージを今回だけ変える</td></tr>
       <tr><td><code>gcvote -y …</code></td><td>確認なしで送信</td></tr>
       <tr><td><code>gcvote config</code></td><td>保存した回答を設定し直す</td></tr>
       <tr><td><code>gcvote login</code> / <code>logout</code></td><td>ログインし直す / ログイン情報を削除</td></tr>
@@ -306,6 +310,10 @@
   <details>
     <summary>Mac で「開発元を検証できないため開けません」と出る</summary>
     <div><p>上の <code>curl … | sh</code> でインストールするか、次を実行してください。</p><pre><code>xattr -d com.apple.quarantine ./gcvote</code></pre></div>
+  </details>
+  <details>
+    <summary>✗ が付いた（URL の間違い・投票受付終了など）</summary>
+    <div><p>✗ の横に理由が出ます。「途中で切れている」「団体が見つからない」は告知文の URL を確認、「受付は終了しました」は期間外です。✗ 以外の団体には通常どおり投票されます。</p></div>
   </details>
   <details>
     <summary>SMS 認証を求められる</summary>

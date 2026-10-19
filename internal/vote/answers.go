@@ -1,6 +1,7 @@
 package vote
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -114,32 +115,74 @@ func ResolveAnswers(p *prompt.Prompter, cfg *config.Config, prof *api.CrossCampu
 	return a, asked, nil
 }
 
-// ResolveMessage は応援メッセージを決める。優先順: -m 指定 > 告知文の指定 > 設定 > 入力。
-func ResolveMessage(p *prompt.Prompter, flagMsg, suggested, cfgMsg string, yes bool) (string, error) {
-	if flagMsg != "" {
-		return flagMsg, nil
+// DefaultMessage は Enter だけで送れる応援メッセージの既定値を決める。
+// 設定済みのメッセージを優先し、告知文に指定の文言があってそれを含まない場合だけ指定に合わせた文面にする。
+func DefaultMessage(suggested, cfgMsg, university string) string {
+	switch {
+	case cfgMsg != "" && (suggested == "" || containsLoose(cfgMsg, suggested)):
+		return cfgMsg
+	case suggested != "":
+		return suggested + "です。応援しています！"
+	case university != "":
+		return university + "です。応援しています！"
+	}
+	return ""
+}
+
+// ResolveMessage は応援メッセージを決める（必須）。-m 指定があればそれを使い、
+// なければ既定値を表示して Enter でそのまま使えるようにする。yes なら既定値を確認なしで使う。
+func ResolveMessage(p *prompt.Prompter, flagMsg, suggested, cfgMsg, university string, yes bool) (string, error) {
+	if m := strings.TrimSpace(flagMsg); m != "" {
+		return m, checkMessageLen(m)
+	}
+	def := DefaultMessage(suggested, cfgMsg, university)
+	if yes {
+		if def == "" {
+			return "", errors.New("応援メッセージが未設定です。-m で指定するか gcvote config で設定してください")
+		}
+		return def, checkMessageLen(def)
 	}
 	if suggested != "" {
-		if yes {
-			return suggested, nil
-		}
-		ok, err := p.Confirm(fmt.Sprintf("告知文の指定どおり、応援メッセージを「%s」にしますか？", suggested), true)
-		if err != nil || ok {
-			return suggested, err
-		}
-	} else if cfgMsg != "" {
-		return cfgMsg, nil
+		p.Printf("告知文の指定: コメント欄に「%s」\n", suggested)
 	}
 	for {
-		m, err := p.String("応援メッセージ（空欄なら送らない）", cfgMsg)
+		m, err := p.String("応援メッセージ（Enterでそのまま）", def)
 		if err != nil {
 			return "", err
 		}
-		if len(utf16.Encode([]rune(m))) <= MaxMessageLen {
-			return m, nil
+		m = strings.TrimSpace(m)
+		if m == "" {
+			p.Printf("応援メッセージは必須です。\n")
+			continue
 		}
-		p.Printf("%d文字以下にしてください。\n", MaxMessageLen)
+		if err := checkMessageLen(m); err != nil {
+			p.Printf("%v\n", err)
+			continue
+		}
+		if suggested != "" && !containsLoose(m, suggested) {
+			ok, err := p.Confirm(fmt.Sprintf("告知文で指定された「%s」が含まれていません。このまま送りますか？", suggested), false)
+			if err != nil {
+				return "", err
+			}
+			if !ok {
+				continue
+			}
+		}
+		return m, nil
 	}
+}
+
+func checkMessageLen(m string) error {
+	if n := len(utf16.Encode([]rune(m))); n > MaxMessageLen {
+		return fmt.Errorf("応援メッセージは%d文字以下にしてください（%d文字）", MaxMessageLen, n)
+	}
+	return nil
+}
+
+// containsLoose は空白（全角含む）の有無を無視して部分一致を調べる。
+func containsLoose(s, sub string) bool {
+	strip := func(x string) string { return strings.Join(strings.Fields(strings.ReplaceAll(x, "\u3000", " ")), "") }
+	return strings.Contains(strip(s), strip(sub))
 }
 
 // ApplyToConfig は回答を設定に書き戻す（保存用）。プロフィール由来の値は保存しない。
@@ -157,6 +200,9 @@ func ApplyToConfig(cfg *config.Config, a *Answers, prof *api.CrossCampusProfile)
 	}
 	if strings.TrimSpace(prof.Profile.Department) == "" {
 		cfg.Department = a.Department
+	}
+	if cfg.Message == "" {
+		cfg.Message = a.Message
 	}
 }
 
@@ -178,9 +224,6 @@ func (a *Answers) Summary() []string {
 		src = append(src, label(Sources, s))
 	}
 	msg := a.Message
-	if msg == "" {
-		msg = "（送らない）"
-	}
 	return []string{
 		"名前等の一般公開・共有への同意: " + consent,
 		"卒業/修了見込み年度: " + strconv.Itoa(a.GraduationFiscalYear),

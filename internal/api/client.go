@@ -23,6 +23,8 @@ type Client struct {
 	SessionID string // Cross Campus ログインのセッション (X-CC-Session-ID)
 	Origin    string // 呼び出し元の大学サイト (https://xxx.2026.giving-campaign.jp)
 	Debug     func(format string, a ...any)
+	// SiteURLOverride はテスト用。設定すると大学サイトの代わりにこのURLを読む。
+	SiteURLOverride string
 }
 
 func New() *Client {

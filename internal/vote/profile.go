@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf16"
 
 	"github.com/RobotClub-RyukyuUniv/GivingCampaign-AutoVoter/internal/api"
 )
@@ -188,8 +187,10 @@ func (a *Answers) Validate(now time.Time) error {
 	if strings.TrimSpace(a.Department) == "" {
 		errs = append(errs, errors.New("学科が未入力です"))
 	}
-	if n := len(utf16.Encode([]rune(a.Message))); n > MaxMessageLen {
-		errs = append(errs, fmt.Errorf("応援メッセージは%d文字以下にしてください（%d文字）", MaxMessageLen, n))
+	if strings.TrimSpace(a.Message) == "" {
+		errs = append(errs, errors.New("応援メッセージが未入力です"))
+	} else if err := checkMessageLen(a.Message); err != nil {
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }

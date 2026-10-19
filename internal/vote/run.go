@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/RobotClub-RyukyuUniv/GivingCampaign-AutoVoter/internal/api"
 	"github.com/RobotClub-RyukyuUniv/GivingCampaign-AutoVoter/internal/prompt"
@@ -15,6 +16,7 @@ import (
 // Plan は1件の投票対象を解決した結果。
 type Plan struct {
 	Target target.Target
+	RawURL string // 解析できなかった URL（表示用）
 	Org    *api.Organization
 	Group  *api.Group
 	Err    error // 解決できなかった・投票できない理由
@@ -29,45 +31,37 @@ func (pl *Plan) Title() string {
 	if pl.Target.Label != "" {
 		return pl.Target.Label
 	}
+	if pl.RawURL != "" {
+		return pl.RawURL
+	}
 	return pl.Target.Host + " " + pl.Target.GroupID
 }
 
-// Resolve は大学（組織）と団体を公開APIで引き当てる。
+// Resolve は大学（組織）と団体を公開APIで引き当て、投票受付中かどうかも確認する。
 func Resolve(ctx context.Context, c *api.Client, targets []target.Target) []*Plan {
-	orgs := map[string]*api.Organization{}
-	groups := map[string][]api.Group{}
+	orgs := map[string]*orgInfo{}
 	var plans []*Plan
 	for _, t := range targets {
 		pl := &Plan{Target: t}
 		plans = append(plans, pl)
-		cc := c.WithOrigin(t.Origin())
-		org, ok := orgs[t.Slug]
+		info, ok := orgs[t.Slug]
 		if !ok {
-			o, err := cc.OrganizationBySlug(ctx, t.Slug)
-			if err != nil {
-				pl.Err = fmt.Errorf("大学情報を取得できません: %w", err)
-				continue
-			}
-			org, orgs[t.Slug] = o, o
+			info = resolveOrg(ctx, c.WithOrigin(t.Origin()), t)
+			orgs[t.Slug] = info
 		}
-		pl.Org = org
-		gs, ok := groups[org.ID]
-		if !ok {
-			var err error
-			if gs, err = cc.Groups(ctx, org.ID); err != nil {
-				pl.Err = fmt.Errorf("団体一覧を取得できません: %w", err)
-				continue
-			}
-			groups[org.ID] = gs
+		pl.Org = info.org
+		if info.err != nil {
+			pl.Err = info.err
+			continue
 		}
-		for i := range gs {
-			if gs[i].ID == t.GroupID {
-				pl.Group = &gs[i]
+		for i := range info.groups {
+			if info.groups[i].ID == t.GroupID {
+				pl.Group = &info.groups[i]
 				break
 			}
 		}
 		if pl.Group == nil {
-			pl.Err = fmt.Errorf("%s に団体ID %s が見つかりません", org.Name, t.GroupID)
+			pl.Err = fmt.Errorf("%s にこの団体が見つかりません（URLの団体IDが間違っている可能性があります）", info.org.Name)
 		}
 	}
 	// 応援は1人1大学につき1回まで。同じ大学の団体が複数あれば2件目以降は投票できない。
@@ -77,12 +71,51 @@ func Resolve(ctx context.Context, c *api.Client, targets []target.Target) []*Pla
 			continue
 		}
 		if first, ok := seen[pl.Org.ID]; ok {
-			pl.Err = fmt.Errorf("応援は1つの大学につき1人1回までです（%s に投票するため対象外）", first.Group.Name)
+			pl.Err = fmt.Errorf("応援は1つの大学につき1人1回までです（同じ大学の「%s」に投票するため対象外）", first.Group.Name)
 			continue
 		}
 		seen[pl.Org.ID] = pl
 	}
 	return plans
+}
+
+type orgInfo struct {
+	org    *api.Organization
+	groups []api.Group
+	err    error
+}
+
+func resolveOrg(ctx context.Context, c *api.Client, t target.Target) *orgInfo {
+	org, err := c.OrganizationBySlug(ctx, t.Slug)
+	switch {
+	case api.IsStatus(err, http.StatusNotFound):
+		return &orgInfo{err: fmt.Errorf("大学のサイト「%s」が見つかりません（URLを確認してください）", t.Host)}
+	case err != nil:
+		return &orgInfo{err: fmt.Errorf("大学情報を取得できませんでした（通信エラー）: %w", err)}
+	}
+	info := &orgInfo{org: org}
+	// 受付状況はサイトのページから読む。読めなくても投票自体は試す（サーバー側でも弾かれる）。
+	if st, err := c.SiteStatus(ctx, t.Origin()); err == nil {
+		switch st.Event {
+		case api.EventClosed:
+			info.err = fmt.Errorf("%s の投票受付は終了しました%s", org.Name, period("（", st.End, "まで）"))
+			return info
+		case api.EventPre:
+			info.err = fmt.Errorf("%s の投票受付はまだ始まっていません%s", org.Name, period("（", st.Start, "から）"))
+			return info
+		}
+	}
+	if info.groups, err = c.Groups(ctx, org.ID); err != nil {
+		info.err = fmt.Errorf("%s の団体一覧を取得できませんでした: %w", org.Name, err)
+	}
+	return info
+}
+
+func period(prefix string, t time.Time, suffix string) string {
+	if t.IsZero() {
+		return ""
+	}
+	return prefix + t.In(jst).Format("1/2 15:04") + suffix
 }
 
 // Result は1件の投票結果。

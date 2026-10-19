@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/RobotClub-RyukyuUniv/GivingCampaign-AutoVoter/internal/api"
+	"github.com/RobotClub-RyukyuUniv/GivingCampaign-AutoVoter/internal/prompt"
 	"github.com/RobotClub-RyukyuUniv/GivingCampaign-AutoVoter/internal/target"
 )
 
@@ -28,6 +29,9 @@ type call struct {
 }
 
 // fakeAPI はサイトのフロントエンドから読み取った応答を返す偽サーバー。
+// eventStatus はサイトの受付状況（opened / closed / pre）。
+var eventStatus = "opened"
+
 func fakeAPI(t *testing.T, registered bool, voteStatus int) (*httptest.Server, *[]call) {
 	var mu sync.Mutex
 	var calls []call
@@ -47,6 +51,12 @@ func fakeAPI(t *testing.T, registered bool, voteStatus int) (*httptest.Server, *
 		mu.Unlock()
 		base := "/gc2026/gc2026_organizations/" + orgID
 		switch r.Method + " " + r.URL.Path {
+		case "GET /form":
+			io.WriteString(w, `<html><script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"eventStatus":"`+eventStatus+`"}},"runtimeConfig":{"GC_SCHEDULE_START":"2026-10-16T09:00:00+09:00","GC_SCHEDULE_END":"2026-10-25T21:00:00+09:00"}}</script></html>`)
+			return
+		case "GET /gc2026/gc2026_organizations/by_slug/nosuch":
+			w.WriteHeader(404)
+			io.WriteString(w, `{"code":404,"message":"Not Found"}`)
 		case "GET /gc2026/gc2026_organizations/by_slug/usp":
 			json.NewEncoder(w).Encode(map[string]any{"id": orgID, "slug": "usp", "name": "テスト大学"})
 		case "GET " + base + "/gc2026_groups":
@@ -115,6 +125,7 @@ func testAnswers() *Answers {
 func client(srv *httptest.Server) *api.Client {
 	c := api.New()
 	c.BaseURL = srv.URL
+	c.SiteURLOverride = srv.URL
 	c.SessionID = "sess"
 	return c
 }
@@ -144,7 +155,7 @@ func TestResolveAndSubmit(t *testing.T) {
 		if cl.Method == "POST" && !strings.HasSuffix(cl.Path, "/me") {
 			post = append(post, cl)
 		}
-		if cl.Origin != "https://usp.2026.giving-campaign.jp" {
+		if cl.Path != "/form" && cl.Origin != "https://usp.2026.giving-campaign.jp" {
 			t.Errorf("%s: Origin = %q", cl.Path, cl.Origin)
 		}
 	}
@@ -251,5 +262,57 @@ func TestBirthday(t *testing.T) {
 		if got, err := birthday(in); err != nil || got != want {
 			t.Errorf("birthday(%q) = %q, %v", in, got, err)
 		}
+	}
+}
+
+func TestResolveErrors(t *testing.T) {
+	srv, _ := fakeAPI(t, false, 201)
+	c := client(srv)
+	plans := Resolve(context.Background(), c, []target.Target{
+		{Host: "nosuch.2026.giving-campaign.jp", Slug: "nosuch", GroupID: groupID},
+		{Host: "usp.2026.giving-campaign.jp", Slug: "usp", GroupID: "55555555-5555-5555-5555-555555555555"},
+	})
+	if plans[0].Err == nil || !strings.Contains(plans[0].Err.Error(), "見つかりません") {
+		t.Errorf("unknown university: %v", plans[0].Err)
+	}
+	if plans[1].Err == nil || !strings.Contains(plans[1].Err.Error(), "団体が見つかりません") {
+		t.Errorf("unknown group: %v", plans[1].Err)
+	}
+
+	eventStatus = "closed"
+	t.Cleanup(func() { eventStatus = "opened" })
+	plans = Resolve(context.Background(), c, []target.Target{{Host: "usp.2026.giving-campaign.jp", Slug: "usp", GroupID: groupID}})
+	if plans[0].Err == nil || !strings.Contains(plans[0].Err.Error(), "終了しました（10/25 21:00まで）") {
+		t.Errorf("closed campaign: %v", plans[0].Err)
+	}
+}
+
+func TestDefaultMessage(t *testing.T) {
+	for _, tc := range []struct{ suggested, cfg, univ, want string }{
+		{"琉球大学 Robotサークル", "琉球大学 Robotサークルです。応援しています！", "琉球大学", "琉球大学 Robotサークルです。応援しています！"},
+		{"琉球大学 Robotサークル", "琉球大学Robotサークルです！", "琉球大学", "琉球大学Robotサークルです！"}, // 空白の違いは無視
+		{"琉球大学 Robotサークル", "がんばってください", "琉球大学", "琉球大学 Robotサークルです。応援しています！"},
+		{"", "がんばってください", "琉球大学", "がんばってください"},
+		{"", "", "琉球大学", "琉球大学です。応援しています！"},
+	} {
+		if got := DefaultMessage(tc.suggested, tc.cfg, tc.univ); got != tc.want {
+			t.Errorf("DefaultMessage(%q, %q) = %q, want %q", tc.suggested, tc.cfg, got, tc.want)
+		}
+	}
+}
+
+func TestResolveMessageEnterUsesDefault(t *testing.T) {
+	p := prompt.New(strings.NewReader("\n"), io.Discard)
+	got, err := ResolveMessage(p, "", "琉球大学 Robotサークル", "琉球大学 Robotサークルです。応援しています！", "琉球大学", false)
+	if err != nil || got != "琉球大学 Robotサークルです。応援しています！" {
+		t.Fatalf("ResolveMessage = %q, %v", got, err)
+	}
+	// 空欄は受け付けず、もう一度聞く
+	p = prompt.New(strings.NewReader("   \nがんばれ\n"), io.Discard)
+	if got, err := ResolveMessage(p, "", "", "", "", false); err != nil || got != "がんばれ" {
+		t.Fatalf("ResolveMessage(empty then text) = %q, %v", got, err)
+	}
+	if _, err := ResolveMessage(prompt.New(strings.NewReader(""), io.Discard), "", "", "", "", true); err == nil {
+		t.Fatalf("-y without any message should fail")
 	}
 }
