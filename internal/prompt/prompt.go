@@ -50,7 +50,8 @@ func (p *Prompter) Line(label string) (string, error) {
 	return strings.TrimSpace(l), nil
 }
 
-// Block は空行が入力されるまで複数行を読む（告知文の貼り付け用）。
+// Block は /end だけの行か EOF まで複数行を読む（告知文の貼り付け用）。
+// 空行は本文として保持し、貼り付けた告知文が途中で切れないようにする。
 func (p *Prompter) Block(label string) (string, error) {
 	p.Printf("%s\n", label)
 	var b strings.Builder
@@ -62,14 +63,8 @@ func (p *Prompter) Block(label string) (string, error) {
 			}
 			break
 		}
-		if strings.TrimSpace(l) == "" {
-			if b.Len() == 0 {
-				continue
-			}
-			// URL行の後の空行で終わらせると告知文が途中で切れるので、空行2連続で確定する。
-			if strings.HasSuffix(b.String(), "\n\n") {
-				break
-			}
+		if strings.TrimSpace(l) == "/end" {
+			break
 		}
 		b.WriteString(l)
 		b.WriteString("\n")

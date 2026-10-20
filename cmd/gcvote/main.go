@@ -120,7 +120,7 @@ func run(ctx context.Context, args []string) error {
 // readInput は引数（URL・ファイル・-）か対話入力から告知文を得る。
 func readInput(p *prompt.Prompter, args []string) (string, error) {
 	if len(args) == 0 {
-		return p.Block("投票ページのURL、または告知文をそのまま貼り付けてください（空行を2回で確定）:")
+		return p.Block("投票ページのURL、または告知文をそのまま貼り付けてください（空行もそのままでOK。最後に新しい行で /end と入力してEnterで確定）:")
 	}
 	var b strings.Builder
 	for _, a := range args {
